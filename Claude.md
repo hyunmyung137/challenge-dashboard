@@ -1,350 +1,112 @@
-# Binance Futures PNL & Tracking Dashboard
+# Binance Futures PNL Dashboard — Project Spec
 
-## Project Overview
-A real-time PNL tracking and performance analytics dashboard for Binance Futures accounts.
-Supports multi-account management with detailed trade history, position monitoring, and risk metrics.
+## Overview
+A single-page, real-time PNL tracking dashboard for Binance Futures accounts.
+Displays total portfolio value, daily PNL chart, open positions (Binance-style cards),
+and key performance metrics. API keys are never stored in code or the repository —
+they are injected at runtime via `.env.local` (local) or Google Secret Manager (production).
 
 ---
 
 ## Tech Stack
 
-| Layer | Choice | Reason |
-|-------|--------|--------|
-| Framework | Next.js 14 (App Router) + TypeScript | Consistent with existing projects |
-| Styling | Tailwind CSS + shadcn/ui | Rapid UI, consistent design system |
-| Charts | Recharts | React-native, responsive, lightweight |
-| State | Zustand | Simple global state for account/positions |
-| Data Fetching | SWR + Binance REST API | Auto-revalidation, polling support |
-| WebSocket | Binance WS API | Real-time price & position updates |
-| Auth | Local API key storage (encrypted) | No backend required initially |
+| Layer | Choice |
+|-------|--------|
+| Framework | Next.js 16 (App Router, standalone output) + TypeScript |
+| Styling | Tailwind CSS v4 |
+| Charts | Recharts (`ComposedChart` — bars + line overlay) |
+| Data Fetching | Native `fetch` in client components |
+| API Layer | Next.js Route Handlers (server-side, HMAC-signed) |
+| Secret Management | Google Secret Manager (production) / `.env.local` (local) |
+| Hosting | Google Cloud Run (`asia-northeast3`, project `agent-wise`) |
+| Container Registry | Google Artifact Registry |
 
 ---
 
-## Folder Structure
+## Actual Folder Structure
 
 ```
 challenge-dashboard/
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx               # Root layout with sidebar
-│   │   ├── page.tsx                 # Redirect to /dashboard
+│   │   ├── layout.tsx                   # Root layout — no sidebar
+│   │   ├── page.tsx                     # Redirects to /dashboard
+│   │   ├── globals.css                  # CSS variables (Binance dark theme)
 │   │   ├── dashboard/
-│   │   │   └── page.tsx             # Main overview
-│   │   ├── positions/
-│   │   │   └── page.tsx             # Open positions table
-│   │   ├── history/
-│   │   │   └── page.tsx             # Trade history & closed PNL
-│   │   ├── analytics/
-│   │   │   └── page.tsx             # Performance charts & stats
-│   │   └── settings/
-│   │       └── page.tsx             # API key management
+│   │   │   └── page.tsx                 # Single dashboard page
+│   │   └── api/
+│   │       └── binance/
+│   │           ├── balance/route.ts     # GET /api/binance/balance
+│   │           ├── positions/route.ts   # GET /api/binance/positions
+│   │           └── income/route.ts      # GET /api/binance/income?days=N
 │   │
 │   ├── components/
 │   │   ├── layout/
-│   │   │   ├── Sidebar.tsx          # Navigation sidebar
-│   │   │   ├── Header.tsx           # Top bar: account selector, refresh, theme
-│   │   │   └── PageShell.tsx        # Page wrapper with title
-│   │   │
-│   │   ├── dashboard/
-│   │   │   ├── StatCard.tsx         # Reusable KPI card (balance, PNL, etc.)
-│   │   │   ├── AccountSummary.tsx   # Wallet balance + margin info
-│   │   │   ├── UnrealizedPNL.tsx    # Live unrealized PNL banner
-│   │   │   ├── DailyPNLChart.tsx    # Bar chart: daily realized PNL (30d)
-│   │   │   ├── WinRateGauge.tsx     # Win rate donut / gauge
-│   │   │   └── RecentTrades.tsx     # Last 5 closed trades list
-│   │   │
-│   │   ├── positions/
-│   │   │   ├── PositionsTable.tsx   # Open positions with live PNL
-│   │   │   ├── PositionRow.tsx      # Single position row
-│   │   │   └── PositionBadge.tsx    # LONG/SHORT badge
-│   │   │
-│   │   ├── history/
-│   │   │   ├── TradeHistoryTable.tsx
-│   │   │   ├── TradeFilters.tsx     # Symbol, date range, side filters
-│   │   │   └── PNLSummaryBar.tsx    # Totals above table
-│   │   │
-│   │   ├── analytics/
-│   │   │   ├── CumulativePNLChart.tsx  # Line chart: cumulative PNL over time
-│   │   │   ├── MonthlyHeatmap.tsx      # Calendar heatmap of daily PNL
-│   │   │   ├── SymbolBreakdown.tsx     # Bar: PNL by trading pair
-│   │   │   └── MetricsGrid.tsx         # Win rate, avg RR, profit factor, etc.
-│   │   │
-│   │   └── ui/                      # shadcn/ui base components
+│   │   │   └── Header.tsx               # Top bar with account badge + refresh
+│   │   └── dashboard/
+│   │       ├── PortfolioHero.tsx        # Section A: total value + breakdown
+│   │       ├── DailyPNLChart.tsx        # Section B: bar+line chart + range tabs
+│   │       ├── MetricsRow.tsx           # Section C: Win Rate / PF / Avg / Fees
+│   │       └── PositionCards.tsx        # Section D: Binance-style position cards
 │   │
-│   ├── lib/
-│   │   ├── binance/
-│   │   │   ├── client.ts            # Binance REST API client
-│   │   │   ├── websocket.ts         # WS connection manager
-│   │   │   └── types.ts             # Binance API response types
-│   │   ├── store/
-│   │   │   ├── accountStore.ts      # Zustand: accounts, selected account
-│   │   │   └── positionStore.ts     # Zustand: live positions
-│   │   └── utils/
-│   │       ├── pnl.ts               # PNL calculation helpers
-│   │       ├── format.ts            # Currency, % formatters
-│   │       └── crypto.ts            # API key encrypt/decrypt
-│   │
-│   └── hooks/
-│       ├── usePositions.ts          # SWR hook for open positions
-│       ├── useTradeHistory.ts       # SWR hook for closed trades
-│       ├── useAccountBalance.ts     # SWR hook for wallet balance
-│       └── useLivePrices.ts         # WebSocket hook for mark prices
+│   └── lib/
+│       ├── binance/
+│       │   └── client.ts               # HMAC-signed Binance REST client (server only)
+│       ├── mock.ts                      # Mock data (used as fallback in dev)
+│       └── utils.ts                    # formatUSD / formatPct / formatPnl / cn
 │
-├── public/
+├── Dockerfile                           # Multi-stage build, standalone Next.js
+├── .dockerignore                        # Excludes .env*, node_modules, .next
+├── .env.local                           # Local secrets — gitignored
+├── .env.local.example                   # Template (safe to commit)
+├── next.config.ts                       # output: "standalone"
 ├── package.json
 ├── tailwind.config.ts
-├── tsconfig.json
-└── Claude.md
+└── tsconfig.json
 ```
 
 ---
 
-## Pages & UI Layout
-
-### Global Layout
-```
-┌─────────────────────────────────────────────────────────┐
-│  SIDEBAR (64px wide, collapsible)                       │
-│  ┌──────┐  ┌───────────────────────────────────────┐   │
-│  │  🏠  │  │  HEADER: [Account ▼]  [⟳ Refresh]  [🌙]│   │
-│  │  📊  │  ├───────────────────────────────────────┤   │
-│  │  📋  │  │                                       │   │
-│  │  📈  │  │           PAGE CONTENT                │   │
-│  │  ⚙️  │  │                                       │   │
-│  └──────┘  └───────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-### Page 1: Dashboard (Overview)
-
-#### Section A — Portfolio Value Hero
-The most prominent element. Takes the full width at the top.
+## Dashboard Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
+│  HEADER:  PNL Dashboard          [● Main Account]   [⟳ refresh]    │
+├─────────────────────────────────────────────────────────────────────┤
+│  [A] PORTFOLIO VALUE HERO                              (full width) │
 │                                                                     │
-│   Total Portfolio Value                          Updated: 14:32:05  │
-│   ─────────────────────────────────────────────────────────────     │
-│   $ 24,812.50                       ▲ +$312.40  (+1.27%) today      │
+│   Total Portfolio Value                    Updated 14:32  1h auto  │
+│   $5,752.84           ▲ +$1,534.62  (+36.36%) unrealized           │
 │                                                                     │
-│   Wallet Balance    Unrealized PNL    Open Positions   Margin Used  │
-│   $24,578.00        +$234.50          6 positions       18.4%       │
-│   (cross margin)    [live, green]     [clickable]       [bar fill]  │
+│   Wallet Balance  │  Unrealized PNL  │  Available  │  Margin Used  │
+│   $4,218.22       │  +$1,534.62      │  $0.84      │  ████░░ 18%   │
+├─────────────────────────────────────────────────────────────────────┤
+│  [B] DAILY PNL CHART                                   (full width) │
 │                                                                     │
+│   Daily PNL                           [7D]  [30D]  [90D]  [All]   │
+│   Today: -$801    Best: —    Worst: -$801    Total (30D): -$801    │
+│                                                                     │
+│   ██ green bars = profit days    ▓▓ red bars = loss days            │
+│   ─── yellow dashed line = cumulative PNL (right Y-axis)           │
+├─────────────────────────────────────────────────────────────────────┤
+│  [C] METRICS ROW                                          (4 cards) │
+│   Win Rate    │  Profit Factor  │  Avg Trade   │  Total Fees        │
+├─────────────────────────────────────────────────────────────────────┤
+│  [D] OPEN POSITIONS (Binance-style cards)              (full width) │
+│                                                                     │
+│  ┌─────────────────────────┐  ┌─────────────────────────┐          │
+│  │ ROBO USDT  [LONG]  [5x] │  │ ...                     │          │
+│  │ cross                   │  │                         │          │
+│  │ Unrealized PNL (USDT)   │  │                         │          │
+│  │ +$1,534.62  (+22.21%)   │  │                         │          │
+│  │ ─────────────────────── │  │                         │          │
+│  │ Size      │ 350,830      │  │                         │          │
+│  │ Margin    │ $8,759.00    │  │                         │          │
+│  │ Entry     │ $0.1250      │  │                         │          │
+│  │ Mark      │ $0.1294      │  │                         │          │
+│  │ Liq. Price│ $0.0955 (red)│  │                         │          │
+│  └─────────────────────────┘  └─────────────────────────┘          │
 └─────────────────────────────────────────────────────────────────────┘
-```
-
-**Data sources:**
-- `totalWalletBalance` from `GET /fapi/v2/balance` (USDT asset)
-- `unrealizedProfit` = sum of all position `unrealizedProfit` from `/fapi/v2/positionRisk`
-- **Portfolio Value = Wallet Balance + Unrealized PNL**
-- Today's change = Portfolio Value − yesterday's ending balance (stored in localStorage)
-- Margin used = `totalMaintMargin / totalWalletBalance × 100`
-
-**Live behavior:**
-- Portfolio value ticks every 5s as unrealized PNL updates via WebSocket mark prices
-- Change arrow and color flip dynamically (green ▲ / red ▼)
-
----
-
-#### Section B — Daily PNL Tracking & Chart
-The second major block. Full-width chart with summary stats above it.
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Daily PNL                               [7D]  [30D]  [90D]  [All] │
-│  ─────────────────────────────────────────────────────────────────  │
-│  Today (realized)    Best Day            Worst Day    Total (range) │
-│  +$89.20             +$420.00  Feb 14    -$180.00     +$1,240.00    │
-│                                                                     │
-│  $                                                                  │
-│  500 ┤                          ██                                  │
-│  400 ┤                    ██    ██   ██                              │
-│  300 ┤        ██    ██    ██    ██   ██    ██                        │
-│  200 ┤  ██    ██    ██    ██    ██   ██    ██   ██    ██             │
-│  100 ┤  ██    ██    ██    ██    ██   ██    ██   ██    ██   ██        │
-│    0 ├──────────────────────────────────────────────────────────    │
-│ -100 ┤                                            ██        ██      │
-│ -180 ┤                                       ▓▓                     │
-│       Feb01  Feb05  Feb08  Feb11  Feb14  Feb17  Feb20  Feb23  Feb27 │
-│                                                                     │
-│       ██ Profit day   ▓▓ Loss day   ─── Cumulative PNL (line)       │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Chart type:** Recharts `ComposedChart`
-- `Bar` — daily realized PNL per day (green `#0ECB81` if positive, red `#F6465D` if negative)
-- `Line` — cumulative PNL overlay on secondary Y-axis (yellow `#F0B90B`, dashed)
-- `ReferenceLine` at y=0 (white, dashed)
-- `Tooltip` shows: date, day PNL ($), cumulative PNL ($), # trades that day
-
-**Time range selector (tabs):** `7D` | `30D` | `90D` | `All`
-- Drives the API call window for `/fapi/v1/income?incomeType=REALIZED_PNL`
-- Default: `30D`
-
-**Summary stats row above chart:**
-
-| Stat | Value | Source |
-|------|-------|--------|
-| Today (realized) | sum of today's `REALIZED_PNL` income | `/fapi/v1/income` filtered to today UTC |
-| Best Day | max daily PNL in range | computed from income data |
-| Worst Day | min daily PNL in range | computed from income data |
-| Total (range) | sum of all days in range | sum of income data |
-
-**Data processing (`lib/utils/pnl.ts`):**
-```
-incomeRecords[]
-  → group by UTC date (YYYY-MM-DD)
-  → sum PNL per day
-  → compute cumulative running total
-  → output: { date, dailyPnl, cumulativePnl }[]
-```
-
----
-
-#### Section C — Supporting Stats Row
-Below the chart, 4 compact cards:
-
-```
-┌──────────────┬──────────────┬──────────────┬──────────────┐
-│  Win Rate    │ Profit Factor│  Avg Trade   │  Total Fees  │
-│   63.4%      │    2.14      │   +$26.38    │   -$45.20    │
-│  30W / 17L   │              │  (in range)  │  (in range)  │
-└──────────────┴──────────────┴──────────────┴──────────────┘
-```
-
----
-
-#### Section D — Recent Trades (bottom)
-Last 5 closed trades, compact list view:
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  Recent Closed Trades                       [View All →] │
-│  ─────────────────────────────────────────────────────── │
-│  BTCUSDT  LONG  0.1     Entry $42,000 → Exit $43,500     │
-│                         +$150.00  (+3.57%)   Feb 27 14:20│
-│  ─────────────────────────────────────────────────────── │
-│  ETHUSDT  SHORT 2.0     Entry $2,800 → Exit $2,750       │
-│                         +$100.00  (+1.78%)   Feb 27 11:05│
-│  ...                                                     │
-└──────────────────────────────────────────────────────────┘
-```
-
----
-
-#### Full Dashboard Layout
-```
-┌────────────────────────────────────────────────────────────────┐
-│  [A] Portfolio Value Hero                          (full width) │
-├────────────────────────────────────────────────────────────────┤
-│  [B] Daily PNL Chart  [7D|30D|90D|All]             (full width) │
-├────────────────────────────────────────────────────────────────┤
-│  [C] Win Rate │ Profit Factor │ Avg Trade │ Total Fees  (4 col) │
-├────────────────────────────────────────────────────────────────┤
-│  [D] Recent Closed Trades                          (full width) │
-└────────────────────────────────────────────────────────────────┘
-```
-
-**Components for this layout:**
-```
-components/dashboard/
-├── PortfolioHero.tsx       ← Section A: total value + breakdown
-├── DailyPNLChart.tsx       ← Section B: chart + range tabs + summary row
-├── DailyPNLSummary.tsx     ← Sub-component: Today / Best / Worst / Total stats
-├── MetricsRow.tsx          ← Section C: 4 stat cards
-└── RecentTrades.tsx        ← Section D: last 5 trades list
-```
-
----
-
-### Page 2: Positions (Live)
-```
-┌─────────────────────────────────────────────────────────┐
-│  Open Positions (8)    [⟳ Auto-refresh: 5s]             │
-├────────┬──────┬──────┬───────┬───────┬────────┬────────┤
-│ Symbol │ Side │  Qty │ Entry │ Mark  │   PNL  │  ROE%  │
-├────────┼──────┼──────┼───────┼───────┼────────┼────────┤
-│ BTCUSD │ LONG │  0.1 │ 42000 │ 43500 │ +$150  │ +3.57% │
-│ ETHUSD │SHORT │  2.0 │  2800 │  2750 │  +$100 │ +1.78% │
-│  ...   │      │      │       │       │        │        │
-└────────┴──────┴──────┴───────┴───────┴────────┴────────┘
-  Live mark price updates via WebSocket. PNL color: green/red.
-```
-
----
-
-### Page 3: Trade History
-```
-┌─────────────────────────────────────────────────────────┐
-│  [Symbol ▼]  [Date Range 📅]  [Side ▼]  [Search 🔍]    │
-├─────────────────────────────────────────────────────────┤
-│  Total Realized PNL: +$1,240.00   Trades: 47   Win: 30  │
-├────────┬──────┬──────┬───────┬───────┬────────┬────────┤
-│ Symbol │ Side │  Qty │ Entry │  Exit │  PNL   │  Date  │
-├────────┼──────┼──────┼───────┼───────┼────────┼────────┤
-│  ...paginated rows...                                   │
-└────────┴──────┴──────┴───────┴───────┴────────┴────────┘
-```
-
----
-
-### Page 4: Analytics
-```
-┌─────────────────────────────────────────────────────────┐
-│  Cumulative PNL Line Chart                              │
-│  [1W] [1M] [3M] [All]                                  │
-│  ↗ $0 ─────────────────────────────── $1,240            │
-├──────────────────────────┬──────────────────────────────┤
-│  PNL by Symbol (Bar)     │  Monthly Heatmap             │
-│  BTC ████████ +$800      │  Sun Mon Tue Wed Thu Fri Sat │
-│  ETH ████ +$300          │   .   .  [+] [-] [+]  .   . │
-│  SOL ██ +$140            │  ...                         │
-├──────────────────────────┴──────────────────────────────┤
-│  [Win Rate: 63%] [Avg RR: 1.8] [Profit Factor: 2.1]    │
-│  [Best Day: +$420] [Worst Day: -$180] [Total Fees: $45] │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-### Page 5: Settings
-```
-┌─────────────────────────────────────────────────────────┐
-│  API Key Management                                     │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │  Account Label:  [Main Account          ]       │   │
-│  │  API Key:        [••••••••••••••••••••••]       │   │
-│  │  API Secret:     [••••••••••••••••••••••]       │   │
-│  │  Testnet:        [ ] Use testnet                │   │
-│  │                  [Test Connection] [Save]        │   │
-│  └─────────────────────────────────────────────────┘   │
-│  [+ Add Another Account]                               │
-│                                                         │
-│  Accounts:  Main Account ✅  Sub Account 1 ✅           │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-## Color & Design System
-
-```
-Background:   #0B0E11  (dark, Binance-inspired)
-Surface:      #1E2329  (card background)
-Border:       #2B3139
-Accent:       #F0B90B  (Binance yellow)
-
-Profit:       #0ECB81  (green)
-Loss:         #F6465D  (red)
-Neutral:      #848E9C
-
-Text Primary:   #EAECEF
-Text Secondary: #848E9C
-
-Font: Inter or Geist (monospace numbers)
 ```
 
 ---
@@ -352,68 +114,109 @@ Font: Inter or Geist (monospace numbers)
 ## Data Flow
 
 ```
-Binance REST API ──► SWR Hooks ──► Zustand Store ──► Components
-Binance WS API  ──► useLivePrices ──► positionStore ──► PositionsTable
-                                                    └──► UnrealizedPNL
+Browser component
+  └─ fetch("/api/binance/balance")
+  └─ fetch("/api/binance/positions")       ← every 1 hour
+  └─ fetch("/api/binance/income?days=N")
+
+Next.js API Route (server-side)
+  └─ reads BINANCE_API_KEY + BINANCE_API_SECRET from env
+  └─ signs request with HMAC-SHA256
+  └─ calls Binance Futures REST API
+  └─ returns parsed JSON to browser
+```
+
+**Keys never reach the browser.** All signing happens server-side in route handlers.
+
+---
+
+## Binance API Endpoints Used
+
+| Internal Route | Binance Endpoint | Purpose |
+|----------------|-----------------|---------|
+| `GET /api/binance/balance` | `GET /fapi/v2/balance` | Wallet balance + available |
+| `GET /api/binance/positions` | `GET /fapi/v2/positionRisk` | Open positions (filtered: amt ≠ 0) |
+| `GET /api/binance/income?days=N` | `GET /fapi/v1/income?incomeType=REALIZED_PNL` | Daily PNL history |
+
+**Signing:** HMAC-SHA256 with `timestamp` + `signature` query params, `X-MBX-APIKEY` header.
+
+---
+
+## Portfolio Value Calculation
+
+```
+Portfolio Value = totalWalletBalance + sum(unrealizedPnl per open position)
+
+Note: crossUnPnl from /fapi/v2/balance returns 0 unreliably.
+      Positions are fetched separately and summed directly.
 ```
 
 ---
 
-## Key Metrics to Track
+## Refresh Strategy
 
-| Metric | Description |
-|--------|-------------|
-| Total Balance | Wallet + unrealized PNL |
-| Unrealized PNL | Sum of all open position PNL |
-| Realized PNL | Closed trade PNL (today / 7d / 30d) |
-| Win Rate | Winning trades / total trades |
-| Profit Factor | Gross profit / gross loss |
-| Avg RR | Average risk:reward ratio |
-| Max Drawdown | Largest peak-to-trough drop |
-| Total Fees | Cumulative trading fees |
-| Best/Worst Day | Max gain/loss in a single day |
+All components fetch independently on mount and refresh every **1 hour**:
+
+```typescript
+const REFRESH_MS = 60 * 60 * 1000;
+useEffect(() => {
+  fetchAll();
+  const interval = setInterval(fetchAll, REFRESH_MS);
+  return () => clearInterval(interval);
+}, []);
+```
+
+Manual refresh available via the button in the Positions card header.
 
 ---
 
-## Binance API Endpoints Needed
+## Design System
 
 ```
-GET /fapi/v2/balance              → Wallet balances
-GET /fapi/v2/positionRisk         → Open positions
-GET /fapi/v1/userTrades           → Trade history
-GET /fapi/v1/income               → Realized PNL history
-WS  wss://fstream.binance.com     → Mark prices, position updates
+Background:     #0B0E11   (Binance dark)
+Surface:        #1E2329   (card bg)
+Elevated:       #2B3139   (input / inner card bg)
+Border:         #2B3139
+
+Accent:         #F0B90B   (Binance yellow — active states, cumulative line)
+Profit:         #0ECB81   (green — positive PNL, LONG badge)
+Loss:           #F6465D   (red — negative PNL, SHORT badge, liq. price)
+
+Text Primary:   #EAECEF
+Text Secondary: #848E9C
+
+Font:           Geist Sans / Geist Mono (tabular-nums for financial values)
 ```
 
 ---
 
-## Implementation Phases
+## Secret Management
 
-### Phase 1 — Foundation
-- [ ] Next.js project setup with Tailwind + shadcn/ui
-- [ ] Sidebar + Header layout
-- [ ] Settings page: API key input & storage (localStorage, encrypted)
-- [ ] Binance REST client with HMAC signing
+### Local Development
+Secrets live in `.env.local` (gitignored):
+```
+BINANCE_API_KEY=your_key
+BINANCE_API_SECRET=your_secret
+```
 
-### Phase 2 — Core Data
-- [ ] Account balance display
-- [ ] Open positions table with manual refresh
-- [ ] Trade history table with filters
+### Production (Google Cloud)
+Secrets stored in **Google Secret Manager**, injected into Cloud Run at runtime via `--set-secrets`.
+Never stored in:
+- Git / GitHub
+- Docker image
+- Cloud Run environment variables console
 
-### Phase 3 — Live Updates
-- [ ] WebSocket integration for mark prices
-- [ ] Auto-refresh positions every 5s
-- [ ] Unrealized PNL live counter
+---
 
-### Phase 4 — Analytics
-- [ ] Cumulative PNL chart
-- [ ] Daily PNL bar chart (30d)
-- [ ] Win rate, profit factor, metrics grid
-- [ ] PNL by symbol breakdown
-- [ ] Monthly calendar heatmap
+## Infrastructure
 
-### Phase 5 — Polish
-- [ ] Multi-account support
-- [ ] Dark/light theme toggle
-- [ ] Export to CSV
-- [ ] Mobile responsive layout
+| Resource | Value |
+|----------|-------|
+| GCP Project | `agent-wise` (project number: `760234499517`) |
+| Region | `asia-northeast3` (Seoul) |
+| Cloud Run service | `challenge-dashboard` |
+| Artifact Registry | `asia-northeast3-docker.pkg.dev/agent-wise/challenge-dashboard/app` |
+| GitHub repo | `https://github.com/hyunmyung137/challenge-dashboard` |
+| Live URL | `https://challenge-dashboard-760234499517.asia-northeast3.run.app` |
+| Secret Manager secrets | `BINANCE_API_KEY`, `BINANCE_API_SECRET` |
+| Cloud Run SA | `760234499517-compute@developer.gserviceaccount.com` |
