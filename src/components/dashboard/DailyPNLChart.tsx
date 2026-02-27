@@ -5,17 +5,14 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, Tooltip,
   ReferenceLine, ResponsiveContainer, Cell,
 } from "recharts";
-import { mockDailyPnl } from "@/lib/mock";
 import { formatPnl } from "@/lib/utils";
 
 const RANGES = ["7D", "30D", "90D", "All"] as const;
 type Range = (typeof RANGES)[number];
 const RANGE_DAYS: Record<Range, number> = { "7D": 7, "30D": 30, "90D": 90, All: 365 };
-const REFRESH_MS = 60 * 60 * 1000; // 1 hour
+const REFRESH_MS = 60 * 60 * 1000;
 
 type DayData = { date: string; dailyPnl: number; cumulativePnl: number };
-
-const USE_MOCK = !process.env.NEXT_PUBLIC_USE_REAL_API;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CustomTooltip({ active, payload, label }: any) {
@@ -35,17 +32,15 @@ function CustomTooltip({ active, payload, label }: any) {
 
 export default function DailyPNLChart() {
   const [range, setRange] = useState<Range>("30D");
-  const [allData, setAllData] = useState<DayData[]>(USE_MOCK ? mockDailyPnl : []);
-  const [loading, setLoading] = useState(!USE_MOCK);
+  const [data, setData] = useState<DayData[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const fetchIncome = useCallback(async (days: number) => {
-    if (USE_MOCK) return;
     setLoading(true);
     try {
       const res = await fetch(`/api/binance/income?days=${days}`);
       if (!res.ok) return;
-      const data = await res.json();
-      setAllData(data);
+      setData(await res.json());
     } catch {} finally {
       setLoading(false);
     }
@@ -56,8 +51,6 @@ export default function DailyPNLChart() {
     const interval = setInterval(() => fetchIncome(RANGE_DAYS[range]), REFRESH_MS);
     return () => clearInterval(interval);
   }, [range, fetchIncome]);
-
-  const data = USE_MOCK ? allData.slice(-RANGE_DAYS[range]) : allData;
 
   const todayPnl = data[data.length - 1]?.dailyPnl ?? 0;
   const bestDay = data.length ? data.reduce((a, b) => (b.dailyPnl > a.dailyPnl ? b : a), data[0]) : null;

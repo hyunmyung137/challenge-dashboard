@@ -2,31 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { mockBalance, mockPositions } from "@/lib/mock";
 import { formatUSD, formatPct } from "@/lib/utils";
 
-type Balance = {
-  totalWalletBalance: number;
-  availableBalance: number;
-};
+type Balance = { totalWalletBalance: number; availableBalance: number };
+type Position = { unrealizedPnl: number };
 
-type Position = {
-  unrealizedPnl: number;
-};
-
-const USE_MOCK = !process.env.NEXT_PUBLIC_USE_REAL_API;
-
-const REFRESH_MS = 60 * 60 * 1000; // 1 hour
+const REFRESH_MS = 60 * 60 * 1000;
 
 export default function PortfolioHero() {
-  const [balance, setBalance] = useState<Balance>(
-    USE_MOCK
-      ? { totalWalletBalance: mockBalance.totalWalletBalance, availableBalance: mockBalance.availableBalance }
-      : { totalWalletBalance: 0, availableBalance: 0 }
-  );
-  const [unrealizedPnl, setUnrealizedPnl] = useState(
-    USE_MOCK ? mockPositions.reduce((s, p) => s + p.unrealizedPnl, 0) : 0
-  );
+  const [balance, setBalance] = useState<Balance>({ totalWalletBalance: 0, availableBalance: 0 });
+  const [unrealizedPnl, setUnrealizedPnl] = useState(0);
   const [now, setNow] = useState("");
 
   useEffect(() => {
@@ -34,26 +19,20 @@ export default function PortfolioHero() {
       setNow(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     tick();
 
-    if (USE_MOCK) return;
-
     async function fetchAll() {
       try {
         const [balRes, posRes] = await Promise.all([
           fetch("/api/binance/balance"),
           fetch("/api/binance/positions"),
         ]);
-
         if (balRes.ok) {
           const b = await balRes.json();
           setBalance({ totalWalletBalance: b.totalWalletBalance, availableBalance: b.availableBalance });
         }
-
         if (posRes.ok) {
           const positions: Position[] = await posRes.json();
-          const totalUnrealized = positions.reduce((s, p) => s + p.unrealizedPnl, 0);
-          setUnrealizedPnl(totalUnrealized);
+          setUnrealizedPnl(positions.reduce((s, p) => s + p.unrealizedPnl, 0));
         }
-
         tick();
       } catch {}
     }
@@ -84,7 +63,6 @@ export default function PortfolioHero() {
         )}
       </div>
 
-      {/* Main portfolio value */}
       <div className="flex items-end gap-4 mb-6">
         <span className="text-4xl font-bold font-num tracking-tight" style={{ color: "var(--text-primary)" }}>
           {formatUSD(portfolioValue)}
@@ -97,7 +75,6 @@ export default function PortfolioHero() {
         </div>
       </div>
 
-      {/* Breakdown */}
       <div className="grid grid-cols-4 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
         <StatItem label="Wallet Balance" value={formatUSD(totalWalletBalance)} sub="USDT futures" />
         <StatItem
