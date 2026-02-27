@@ -1,26 +1,33 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-base: #0B0E11;
+  --bg-surface: #1E2329;
+  --bg-elevated: #2B3139;
+  --border: #2B3139;
+  --accent: #F0B90B;
+  --profit: #0ECB81;
+  --loss: #F6465D;
+  --neutral: #848E9C;
+  --text-primary: #EAECEF;
+  --text-secondary: #848E9C;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Inter', Arial, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Monospace numbers for financial data */
+.font-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
