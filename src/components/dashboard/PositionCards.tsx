@@ -18,14 +18,14 @@ type Position = {
   roe: number;
 };
 
-export default function PositionCards() {
+export default function PositionCards({ apiBase = "/api/binance" }: { apiBase?: string }) {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
   const fetchPositions = useCallback(async () => {
     try {
-      const res = await fetch("/api/binance/positions");
+      const res = await fetch(`${apiBase}/positions`);
       if (!res.ok) throw new Error("API error");
       setPositions(await res.json());
       setLastUpdated(new Date());
@@ -34,7 +34,7 @@ export default function PositionCards() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     fetchPositions();

@@ -9,7 +9,7 @@ type Position = { unrealizedPnl: number };
 
 const REFRESH_MS = 60 * 60 * 1000;
 
-export default function PortfolioHero() {
+export default function PortfolioHero({ apiBase = "/api/binance" }: { apiBase?: string }) {
   const [balance, setBalance] = useState<Balance>({ totalWalletBalance: 0, availableBalance: 0 });
   const [unrealizedPnl, setUnrealizedPnl] = useState(0);
   const [now, setNow] = useState("");
@@ -22,8 +22,8 @@ export default function PortfolioHero() {
     async function fetchAll() {
       try {
         const [balRes, posRes] = await Promise.all([
-          fetch("/api/binance/balance"),
-          fetch("/api/binance/positions"),
+          fetch(`${apiBase}/balance`),
+          fetch(`${apiBase}/positions`),
         ]);
         if (balRes.ok) {
           const b = await balRes.json();
@@ -40,7 +40,7 @@ export default function PortfolioHero() {
     fetchAll();
     const interval = setInterval(fetchAll, REFRESH_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [apiBase]);
 
   const { totalWalletBalance, availableBalance } = balance;
   const portfolioValue = totalWalletBalance + unrealizedPnl;

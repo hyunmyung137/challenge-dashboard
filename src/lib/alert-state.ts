@@ -3,28 +3,29 @@ interface PositionAlertState {
   minBucket: number;
 }
 
-// Price alert state: tracks highest/lowest 5% bucket seen per symbol
+// Price alert state keyed as `${namespace}:${symbol}`
 const alertState = new Map<string, PositionAlertState>();
 
-// null = cold start (not yet initialized), Set = known symbols
-let knownSymbols: Set<string> | null = null;
+// Known symbols keyed by namespace; null = cold start
+const knownSymbolsMap = new Map<string, Set<string> | null>();
 
 /**
- * Check price movement for a position and return an alert bucket if crossed.
- * Returns the currentBucket if a new extreme is crossed, otherwise null.
+ * Check price movement for a position and return an alert if a new 5% bucket is crossed.
  */
 export function checkPriceAlert(
   symbol: string,
-  pricePct: number
+  pricePct: number,
+  namespace = "default"
 ): { bucket: number; direction: "up" | "down" } | null {
+  const key = `${namespace}:${symbol}`;
   const currentBucket = Math.floor(pricePct / 5);
 
-  if (!alertState.has(symbol)) {
-    alertState.set(symbol, { maxBucket: currentBucket, minBucket: currentBucket });
+  if (!alertState.has(key)) {
+    alertState.set(key, { maxBucket: currentBucket, minBucket: currentBucket });
     return null;
   }
 
-  const state = alertState.get(symbol)!;
+  const state = alertState.get(key)!;
 
   if (currentBucket > state.maxBucket) {
     state.maxBucket = currentBucket;
@@ -41,31 +42,36 @@ export function checkPriceAlert(
 
 /**
  * Detect newly opened or closed positions.
- * Returns arrays of opened and closed symbols.
- * On cold start (knownSymbols === null), initializes state without alerting.
+ * On cold start, initializes state without alerting.
  */
-export function detectPositionChanges(currentSymbols: string[]): {
+export function detectPositionChanges(
+  currentSymbols: string[],
+  namespace = "default"
+): {
   opened: string[];
   closed: string[];
   isColdStart: boolean;
 } {
   const currentSet = new Set(currentSymbols);
+  const knownSymbols = knownSymbolsMap.has(namespace)
+    ? knownSymbolsMap.get(namespace)!
+    : null;
 
   if (knownSymbols === null) {
-    knownSymbols = currentSet;
+    knownSymbolsMap.set(namespace, currentSet);
     return { opened: [], closed: [], isColdStart: true };
   }
 
-  const opened = currentSymbols.filter((s) => !knownSymbols!.has(s));
+  const opened = currentSymbols.filter((s) => !knownSymbols.has(s));
   const closed = Array.from(knownSymbols).filter((s) => !currentSet.has(s));
 
-  knownSymbols = currentSet;
+  knownSymbolsMap.set(namespace, currentSet);
   return { opened, closed, isColdStart: false };
 }
 
 /**
  * Remove price alert state for a closed position.
  */
-export function clearAlertState(symbol: string): void {
-  alertState.delete(symbol);
+export function clearAlertState(symbol: string, namespace = "default"): void {
+  alertState.delete(`${namespace}:${symbol}`);
 }

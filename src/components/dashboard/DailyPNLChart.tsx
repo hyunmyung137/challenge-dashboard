@@ -30,7 +30,7 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-export default function DailyPNLChart() {
+export default function DailyPNLChart({ apiBase = "/api/binance" }: { apiBase?: string }) {
   const [range, setRange] = useState<Range>("30D");
   const [data, setData] = useState<DayData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,13 +38,13 @@ export default function DailyPNLChart() {
   const fetchIncome = useCallback(async (days: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/binance/income?days=${days}`);
+      const res = await fetch(`${apiBase}/income?days=${days}`);
       if (!res.ok) return;
       setData(await res.json());
     } catch {} finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     fetchIncome(RANGE_DAYS[range]);
