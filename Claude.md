@@ -197,6 +197,10 @@ Secrets live in `.env.local` (gitignored):
 ```
 BINANCE_API_KEY=your_key
 BINANCE_API_SECRET=your_secret
+TELEGRAM_BOT_TOKEN=<from @BotFather>
+TELEGRAM_SUMMARY_CHAT_ID=@wise_degen_house   # public announcement channel
+TELEGRAM_ALERT_CHAT_ID=<numeric ID of private group, e.g. -1001234567890>
+CRON_SECRET=<random secret for cron auth>
 ```
 
 ### Production (Google Cloud)
@@ -205,6 +209,19 @@ Never stored in:
 - Git / GitHub
 - Docker image
 - Cloud Run environment variables console
+
+Add new secrets to Secret Manager:
+```bash
+echo -n "your_token" | gcloud secrets create TELEGRAM_BOT_TOKEN --data-file=- --project=agent-wise
+echo -n "@wise_degen_house" | gcloud secrets create TELEGRAM_SUMMARY_CHAT_ID --data-file=- --project=agent-wise
+echo -n "-1002040977958" | gcloud secrets create TELEGRAM_ALERT_CHAT_ID --data-file=- --project=agent-wise
+echo -n "your_cron_secret" | gcloud secrets create CRON_SECRET --data-file=- --project=agent-wise
+```
+
+Mount in Cloud Run (add to existing `--set-secrets` flag):
+```
+TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_SUMMARY_CHAT_ID=TELEGRAM_SUMMARY_CHAT_ID:latest,TELEGRAM_ALERT_CHAT_ID=TELEGRAM_ALERT_CHAT_ID:latest,CRON_SECRET=CRON_SECRET:latest
+```
 
 ---
 
@@ -218,5 +235,42 @@ Never stored in:
 | Artifact Registry | `asia-northeast3-docker.pkg.dev/agent-wise/challenge-dashboard/app` |
 | GitHub repo | `https://github.com/hyunmyung137/challenge-dashboard` |
 | Live URL | `https://challenge-dashboard-760234499517.asia-northeast3.run.app` |
-| Secret Manager secrets | `BINANCE_API_KEY`, `BINANCE_API_SECRET` |
+| Secret Manager secrets | `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_SUMMARY_CHAT_ID`, `TELEGRAM_ALERT_CHAT_ID`, `CRON_SECRET` |
 | Cloud Run SA | `760234499517-compute@developer.gserviceaccount.com` |
+
+---
+
+## Cloud Scheduler Jobs (Telegram Alerts)
+
+### Weekly Summary — Friday 7PM KST (10AM UTC)
+```bash
+gcloud scheduler jobs create http weekly-summary \
+  --schedule="0 10 * * 5" \
+  --uri="https://challenge-dashboard-760234499517.asia-northeast3.run.app/api/telegram/weekly-summary" \
+  --http-method=GET \
+  --headers="Authorization=Bearer ${CRON_SECRET}" \
+  --location=asia-northeast3
+```
+
+### Price Alert — every 15 minutes
+```bash
+gcloud scheduler jobs create http price-alert \
+  --schedule="*/15 * * * *" \
+  --uri="https://challenge-dashboard-760234499517.asia-northeast3.run.app/api/telegram/price-alert" \
+  --http-method=GET \
+  --headers="Authorization=Bearer ${CRON_SECRET}" \
+  --location=asia-northeast3
+```
+
+Alert state is in-memory — resets on container restart. On cold start, knownSymbols is initialized without sending open/close alerts to avoid duplicate notifications.
+
+### Folder additions for Telegram bot
+```
+src/
+├── app/api/telegram/
+│   ├── weekly-summary/route.ts   # GET — sends weekly KST report
+│   └── price-alert/route.ts      # GET — detects position changes + ±5% price moves
+└── lib/
+    ├── telegram.ts               # sendMessage() via Bot API (HTML parse mode)
+    └── alert-state.ts            # In-memory price bucket + position change tracker
+```
