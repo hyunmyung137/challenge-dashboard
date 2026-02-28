@@ -3,6 +3,7 @@ import PortfolioHero from "@/components/dashboard/PortfolioHero";
 import DailyPNLChart from "@/components/dashboard/DailyPNLChart";
 import MetricsRow from "@/components/dashboard/MetricsRow";
 import PositionCards from "@/components/dashboard/PositionCards";
+import PNLHistoryTable from "@/components/dashboard/PNLHistoryTable";
 
 export default function DashboardPage() {
   return (
@@ -13,6 +14,7 @@ export default function DashboardPage() {
         <DailyPNLChart />
         <MetricsRow />
         <PositionCards />
+        <PNLHistoryTable />
       </div>
     </>
   );
