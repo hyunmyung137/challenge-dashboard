@@ -1,56 +1,46 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { formatPnl } from "@/lib/utils";
+import { useState, useEffect, useCallback } from "react";
+import { formatPnl, cn } from "@/lib/utils";
 
 const RANGES = ["7D", "30D", "90D", "All"] as const;
 type Range = (typeof RANGES)[number];
 const RANGE_DAYS: Record<Range, number> = { "7D": 7, "30D": 30, "90D": 90, All: 365 };
 
-type Trade = { time: number; date: string; symbol: string; pnl: number };
-type BySymbol = { symbol: string; trades: number; totalPnl: number; avgPnl: number };
+type ClosedPosition = {
+  symbol: string;
+  side: "LONG" | "SHORT";
+  openDate: string;
+  closeDate: string;
+  openTime: number;
+  closeTime: number;
+  realizedPnl: number;
+};
 
 export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?: string }) {
   const [range, setRange] = useState<Range>("30D");
-  const [view, setView] = useState<"symbol" | "trade">("trade");
-  const [trades, setTrades] = useState<Trade[]>([]);
+  const [positions, setPositions] = useState<ClosedPosition[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchTrades = useCallback(async (days: number) => {
+  const fetchHistory = useCallback(async (days: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/trades?days=${days}`);
+      const res = await fetch(`${apiBase}/position-history?days=${days}`);
       if (!res.ok) return;
-      setTrades(await res.json());
+      setPositions(await res.json());
     } catch {
-      console.error("Failed to fetch trade history");
+      console.error("Failed to fetch position history");
     } finally {
       setLoading(false);
     }
   }, [apiBase]);
 
   useEffect(() => {
-    fetchTrades(RANGE_DAYS[range]);
-  }, [range, fetchTrades]);
+    fetchHistory(RANGE_DAYS[range]);
+  }, [range, fetchHistory]);
 
-  const bySymbol = useMemo<BySymbol[]>(() => {
-    const map: Record<string, { count: number; total: number }> = {};
-    for (const t of trades) {
-      if (!map[t.symbol]) map[t.symbol] = { count: 0, total: 0 };
-      map[t.symbol].count += 1;
-      map[t.symbol].total += t.pnl;
-    }
-    return Object.entries(map)
-      .map(([symbol, { count, total }]) => ({
-        symbol,
-        trades: count,
-        totalPnl: parseFloat(total.toFixed(2)),
-        avgPnl: parseFloat((total / count).toFixed(2)),
-      }))
-      .sort((a, b) => b.totalPnl - a.totalPnl);
-  }, [trades]);
-
-  const totalPnl = trades.reduce((s, t) => s + t.pnl, 0);
+  const totalPnl = positions.reduce((s, p) => s + p.realizedPnl, 0);
+  const winCount = positions.filter((p) => p.realizedPnl > 0).length;
 
   return (
     <div className="rounded-xl" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
@@ -58,40 +48,34 @@ export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?
       <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: "var(--border)" }}>
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-            PNL History
+            Position History
           </span>
-          {!loading && trades.length > 0 && (
-            <span className="text-sm font-semibold font-num"
-              style={{ color: totalPnl >= 0 ? "var(--profit)" : "var(--loss)" }}>
-              {formatPnl(totalPnl)}
-            </span>
+          {!loading && positions.length > 0 && (
+            <>
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+                {positions.length} closed
+              </span>
+              <span className="text-sm font-semibold font-num"
+                style={{ color: totalPnl >= 0 ? "var(--profit)" : "var(--loss)" }}>
+                {formatPnl(totalPnl)}
+              </span>
+              <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                {winCount}W / {positions.length - winCount}L
+              </span>
+            </>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-            {(["symbol", "trade"] as const).map((v) => (
-              <button key={v} onClick={() => setView(v)}
-                className="px-3 py-1 text-xs font-medium transition-colors"
-                style={view === v
-                  ? { background: "var(--bg-elevated)", color: "var(--text-primary)" }
-                  : { background: "transparent", color: "var(--text-secondary)" }}>
-                {v === "symbol" ? "By Symbol" : "By Trade"}
-              </button>
-            ))}
-          </div>
-          {/* Range tabs */}
-          <div className="flex gap-1">
-            {RANGES.map((r) => (
-              <button key={r} onClick={() => setRange(r)}
-                className="px-2.5 py-1 rounded text-xs font-medium transition-colors"
-                style={range === r
-                  ? { background: "var(--accent)", color: "#000" }
-                  : { background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
-                {r}
-              </button>
-            ))}
-          </div>
+        <div className="flex gap-1">
+          {RANGES.map((r) => (
+            <button key={r} onClick={() => setRange(r)}
+              className="px-2.5 py-1 rounded text-xs font-medium transition-colors"
+              style={range === r
+                ? { background: "var(--accent)", color: "#000" }
+                : { background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+              {r}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -99,94 +83,61 @@ export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?
       {loading ? (
         <div className="p-5 flex flex-col gap-2">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-9 rounded-lg animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+            <div key={i} className="h-10 rounded-lg animate-pulse" style={{ background: "var(--bg-elevated)" }} />
           ))}
         </div>
-      ) : trades.length === 0 ? (
+      ) : positions.length === 0 ? (
         <div className="flex items-center justify-center py-16">
-          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>No trade history for this period</p>
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>No closed positions for this period</p>
         </div>
-      ) : view === "symbol" ? (
-        <BySymbolView rows={bySymbol} />
       ) : (
-        <ByTradeView trades={trades} />
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                {["Symbol", "Side", "Opened", "Closed", "Realized PNL"].map((h) => (
+                  <th key={h} className="px-5 py-2.5 text-left font-medium"
+                    style={{ color: "var(--text-secondary)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((pos, i) => {
+                const isLong = pos.side === "LONG";
+                const sideColor = isLong ? "var(--profit)" : "var(--loss)";
+                const sideBg = isLong ? "rgba(14,203,129,0.12)" : "rgba(246,70,93,0.12)";
+                const pnlPos = pos.realizedPnl >= 0;
+                return (
+                  <tr key={i}
+                    className={cn("transition-colors hover:brightness-110")}
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <td className="px-5 py-3 font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {pos.symbol.replace("USDT", "")}
+                      <span className="ml-1 font-normal" style={{ color: "var(--text-secondary)" }}>USDT</span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded"
+                        style={{ background: sideBg, color: sideColor }}>
+                        {pos.side}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 font-num" style={{ color: "var(--text-secondary)" }}>
+                      {pos.openDate}
+                    </td>
+                    <td className="px-5 py-3 font-num" style={{ color: "var(--text-secondary)" }}>
+                      {pos.closeDate}
+                    </td>
+                    <td className="px-5 py-3 font-semibold font-num"
+                      style={{ color: pnlPos ? "var(--profit)" : "var(--loss)" }}>
+                      {formatPnl(pos.realizedPnl)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-    </div>
-  );
-}
-
-function BySymbolView({ rows }: { rows: BySymbol[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr style={{ borderBottom: "1px solid var(--border)" }}>
-            {["Symbol", "Trades", "Total PNL", "Avg / Trade"].map((h) => (
-              <th key={h} className="px-5 py-2.5 text-left font-medium"
-                style={{ color: "var(--text-secondary)" }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.symbol}
-              className="transition-colors hover:brightness-110"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-              <td className="px-5 py-3 font-semibold" style={{ color: "var(--text-primary)" }}>
-                {row.symbol.replace("USDT", "")}
-                <span className="ml-1 font-normal" style={{ color: "var(--text-secondary)" }}>USDT</span>
-              </td>
-              <td className="px-5 py-3 font-num" style={{ color: "var(--text-secondary)" }}>
-                {row.trades}
-              </td>
-              <td className="px-5 py-3 font-semibold font-num"
-                style={{ color: row.totalPnl >= 0 ? "var(--profit)" : "var(--loss)" }}>
-                {formatPnl(row.totalPnl)}
-              </td>
-              <td className="px-5 py-3 font-num"
-                style={{ color: row.avgPnl >= 0 ? "var(--profit)" : "var(--loss)" }}>
-                {formatPnl(row.avgPnl)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function ByTradeView({ trades }: { trades: Trade[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr style={{ borderBottom: "1px solid var(--border)" }}>
-            {["Date", "Symbol", "Realized PNL"].map((h) => (
-              <th key={h} className="px-5 py-2.5 text-left font-medium"
-                style={{ color: "var(--text-secondary)" }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {trades.map((t, i) => (
-            <tr key={i}
-              className="transition-colors hover:brightness-110"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-              <td className="px-5 py-3 font-num" style={{ color: "var(--text-secondary)" }}>
-                {t.date}
-              </td>
-              <td className="px-5 py-3 font-semibold" style={{ color: "var(--text-primary)" }}>
-                {t.symbol.replace("USDT", "")}
-                <span className="ml-1 font-normal" style={{ color: "var(--text-secondary)" }}>USDT</span>
-              </td>
-              <td className="px-5 py-3 font-semibold font-num"
-                style={{ color: t.pnl >= 0 ? "var(--profit)" : "var(--loss)" }}>
-                {formatPnl(t.pnl)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

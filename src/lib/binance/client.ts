@@ -35,6 +35,8 @@ export function createBinanceClient(apiKeyVar: string, apiSecretVar: string) {
     getPositions: () => binanceFetch("/fapi/v2/positionRisk"),
     getIncome: (params: { startTime?: number; endTime?: number; limit?: number } = {}) =>
       binanceFetch("/fapi/v1/income", { incomeType: "REALIZED_PNL", limit: 1000, ...params }),
+    getUserTrades: (params: { symbol: string; startTime?: number; limit?: number }) =>
+      binanceFetch("/fapi/v1/userTrades", { limit: 1000, ...params }),
   };
 }
 
@@ -43,3 +45,4 @@ const _default = createBinanceClient("BINANCE_API_KEY", "BINANCE_API_SECRET");
 export const getBalance = _default.getBalance;
 export const getPositions = _default.getPositions;
 export const getIncome = _default.getIncome;
+export const getUserTrades = _default.getUserTrades;
