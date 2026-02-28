@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { formatPnl, cn } from "@/lib/utils";
+import { formatPnl, formatUSD, cn } from "@/lib/utils";
 
 const RANGES = ["7D", "30D", "90D", "All"] as const;
 type Range = (typeof RANGES)[number];
@@ -14,8 +14,17 @@ type ClosedPosition = {
   closeDate: string;
   openTime: number;
   closeTime: number;
+  entryPrice: number;
+  exitPrice: number;
   realizedPnl: number;
 };
+
+function priceDecimals(price: number): number {
+  if (price >= 1000) return 1;
+  if (price >= 10) return 2;
+  if (price >= 1) return 3;
+  return 4;
+}
 
 export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?: string }) {
   const [range, setRange] = useState<Range>("30D");
@@ -95,8 +104,8 @@ export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?
           <table className="w-full text-xs">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                {["Symbol", "Side", "Opened", "Closed", "Realized PNL"].map((h) => (
-                  <th key={h} className="px-5 py-2.5 text-left font-medium"
+                {["Symbol", "Side", "Opened", "Closed", "Entry", "Exit", "Realized PNL"].map((h) => (
+                  <th key={h} className="px-5 py-2.5 text-left font-medium whitespace-nowrap"
                     style={{ color: "var(--text-secondary)" }}>{h}</th>
                 ))}
               </tr>
@@ -107,27 +116,34 @@ export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?
                 const sideColor = isLong ? "var(--profit)" : "var(--loss)";
                 const sideBg = isLong ? "rgba(14,203,129,0.12)" : "rgba(246,70,93,0.12)";
                 const pnlPos = pos.realizedPnl >= 0;
+                const dec = priceDecimals(pos.entryPrice);
                 return (
                   <tr key={i}
                     className={cn("transition-colors hover:brightness-110")}
                     style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <td className="px-5 py-3 font-semibold" style={{ color: "var(--text-primary)" }}>
+                    <td className="px-5 py-3 font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
                       {pos.symbol.replace("USDT", "")}
                       <span className="ml-1 font-normal" style={{ color: "var(--text-secondary)" }}>USDT</span>
                     </td>
                     <td className="px-5 py-3">
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded"
+                      <span className="font-bold px-1.5 py-0.5 rounded"
                         style={{ background: sideBg, color: sideColor }}>
                         {pos.side}
                       </span>
                     </td>
-                    <td className="px-5 py-3 font-num" style={{ color: "var(--text-secondary)" }}>
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
                       {pos.openDate}
                     </td>
-                    <td className="px-5 py-3 font-num" style={{ color: "var(--text-secondary)" }}>
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
                       {pos.closeDate}
                     </td>
-                    <td className="px-5 py-3 font-semibold font-num"
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                      {formatUSD(pos.entryPrice, dec)}
+                    </td>
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
+                      {formatUSD(pos.exitPrice, dec)}
+                    </td>
+                    <td className="px-5 py-3 font-semibold font-num whitespace-nowrap"
                       style={{ color: pnlPos ? "var(--profit)" : "var(--loss)" }}>
                       {formatPnl(pos.realizedPnl)}
                     </td>
