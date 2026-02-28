@@ -12,7 +12,7 @@ type BySymbol = { symbol: string; trades: number; totalPnl: number; avgPnl: numb
 
 export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?: string }) {
   const [range, setRange] = useState<Range>("30D");
-  const [view, setView] = useState<"symbol" | "trade">("symbol");
+  const [view, setView] = useState<"symbol" | "trade">("trade");
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
 
