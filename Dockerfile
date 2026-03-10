@@ -12,7 +12,10 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# API keys are injected at runtime via Cloud Run env vars — not baked into image
+# Environment variables are injected at runtime via Cloud Run --set-secrets
+# Supabase public URL/key needed at build time for client bundles
+ARG NEXT_PUBLIC_SUPABASE_URL=""
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=""
 RUN npm run build
 
 # Production image
@@ -20,6 +23,7 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV HOSTNAME="0.0.0.0"
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

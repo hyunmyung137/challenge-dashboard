@@ -2,14 +2,18 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { formatPnl, formatUSD, cn } from "@/lib/utils";
+import { useEncryptionStore, type ExchangeName } from "@/stores/encryption-store";
+import { usePortfolioStore } from "@/stores/portfolio-store";
+import { EXCHANGE_INFO } from "@/lib/exchanges";
 
 const RANGES = ["7D", "30D", "90D", "All"] as const;
 type Range = (typeof RANGES)[number];
 const RANGE_DAYS: Record<Range, number> = { "7D": 7, "30D": 30, "90D": 90, All: 365 };
 
 type ClosedPosition = {
+  exchange?: ExchangeName;
   symbol: string;
-  side: "LONG" | "SHORT";
+  side: "LONG" | "SHORT" | "SPOT";
   openDate: string;
   closeDate: string;
   openTime: number;
@@ -26,62 +30,126 @@ function priceDecimals(price: number): number {
   return 4;
 }
 
-export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?: string }) {
+export default function PNLHistoryTable() {
   const [range, setRange] = useState<Range>("30D");
   const [positions, setPositions] = useState<ClosedPosition[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const { isUnlocked, credentials } = useEncryptionStore();
+  const { activeFilter } = usePortfolioStore();
+
   const fetchHistory = useCallback(async (days: number) => {
+    if (!isUnlocked || credentials.size === 0) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/position-history?days=${days}`);
-      if (!res.ok) return;
-      setPositions(await res.json());
+      const entries = Array.from(credentials.entries());
+      const results = await Promise.all(
+        entries.map(async ([key, creds]) => {
+          const exchange = key.split(":")[0] as ExchangeName;
+          try {
+            const res = await fetch(`/api/exchange/${exchange}/income?days=${days}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(creds),
+            });
+            if (!res.ok) return [];
+            return [] as ClosedPosition[];
+          } catch {
+            return [];
+          }
+        }),
+      );
+
+      const allPositions = results.flat();
+      setPositions(allPositions);
     } catch {
       console.error("Failed to fetch position history");
     } finally {
       setLoading(false);
     }
-  }, [apiBase]);
+  }, [isUnlocked, credentials]);
 
   useEffect(() => {
     fetchHistory(RANGE_DAYS[range]);
   }, [range, fetchHistory]);
 
-  const totalPnl = positions.reduce((s, p) => s + p.realizedPnl, 0);
-  const winCount = positions.filter((p) => p.realizedPnl > 0).length;
+  // Filter by active exchange
+  const filteredPositions = activeFilter
+    ? positions.filter((p) => p.exchange === activeFilter)
+    : positions;
+
+  const totalPnl = filteredPositions.reduce((s, p) => s + p.realizedPnl, 0);
+  const winCount = filteredPositions.filter((p) => p.realizedPnl > 0).length;
 
   return (
-    <div className="rounded-xl" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="flex items-center justify-between px-5 py-3.5"
+        style={{ borderBottom: "1px solid var(--border)" }}
+      >
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+          <span
+            style={{
+              fontSize: ".8rem",
+              fontWeight: 700,
+              letterSpacing: ".08em",
+              textTransform: "uppercase",
+              color: "var(--white)",
+            }}
+          >
             Position History
           </span>
-          {!loading && positions.length > 0 && (
+          {!loading && filteredPositions.length > 0 && (
             <>
-              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
-                {positions.length} closed
+              <span
+                className="font-num"
+                style={{
+                  fontSize: ".7rem",
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  background: "var(--dim)",
+                  border: "1px solid var(--border)",
+                  color: "var(--muted)",
+                }}
+              >
+                {filteredPositions.length} closed
               </span>
-              <span className="text-sm font-semibold font-num"
-                style={{ color: totalPnl >= 0 ? "var(--profit)" : "var(--loss)" }}>
+              <span
+                className="font-num"
+                style={{
+                  fontSize: ".85rem",
+                  fontWeight: 700,
+                  color: totalPnl >= 0 ? "var(--profit)" : "var(--loss)",
+                }}
+              >
                 {formatPnl(totalPnl)}
               </span>
-              <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                {winCount}W / {positions.length - winCount}L
+              <span style={{ fontSize: ".7rem", color: "var(--muted)" }}>
+                {winCount}W / {filteredPositions.length - winCount}L
               </span>
             </>
           )}
         </div>
         <div className="flex gap-1">
           {RANGES.map((r) => (
-            <button key={r} onClick={() => setRange(r)}
-              className="px-2.5 py-1 rounded text-xs font-medium transition-colors"
-              style={range === r
-                ? { background: "var(--accent)", color: "#000" }
-                : { background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className="px-2.5 py-1 transition-colors"
+              style={{
+                fontSize: ".65rem",
+                fontWeight: 700,
+                letterSpacing: ".08em",
+                ...(range === r
+                  ? { background: "var(--acid)", color: "var(--black)" }
+                  : { background: "var(--dim)", color: "var(--muted)", border: "1px solid var(--border)" }),
+              }}
+            >
               {r}
             </button>
           ))}
@@ -92,59 +160,100 @@ export default function PNLHistoryTable({ apiBase = "/api/binance" }: { apiBase?
       {loading ? (
         <div className="p-5 flex flex-col gap-2">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-10 rounded-lg animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+            <div key={i} className="animate-pulse" style={{ height: "40px", background: "var(--dim)" }} />
           ))}
         </div>
-      ) : positions.length === 0 ? (
+      ) : filteredPositions.length === 0 ? (
         <div className="flex items-center justify-center py-16">
-          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>No closed positions for this period</p>
+          <p style={{ fontSize: ".75rem", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--muted)" }}>
+            No closed positions for this period
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full" style={{ fontSize: ".75rem" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                {["Symbol", "Side", "Opened", "Closed", "Entry", "Exit", "Realized PNL"].map((h) => (
-                  <th key={h} className="px-5 py-2.5 text-left font-medium whitespace-nowrap"
-                    style={{ color: "var(--text-secondary)" }}>{h}</th>
+                {["Exchange", "Symbol", "Side", "Opened", "Closed", "Entry", "Exit", "Realized PNL"].map((h) => (
+                  <th
+                    key={h}
+                    className="px-5 py-2.5 text-left whitespace-nowrap"
+                    style={{
+                      fontWeight: 700,
+                      letterSpacing: ".08em",
+                      textTransform: "uppercase",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {positions.map((pos, i) => {
+              {filteredPositions.map((pos, i) => {
                 const isLong = pos.side === "LONG";
                 const sideColor = isLong ? "var(--profit)" : "var(--loss)";
-                const sideBg = isLong ? "rgba(14,203,129,0.12)" : "rgba(246,70,93,0.12)";
+                const sideBg = isLong ? "rgba(14,203,129,0.08)" : "rgba(255,45,45,0.08)";
                 const pnlPos = pos.realizedPnl >= 0;
                 const dec = priceDecimals(pos.entryPrice);
+                const info = pos.exchange ? EXCHANGE_INFO[pos.exchange] : null;
                 return (
-                  <tr key={i}
-                    className={cn("transition-colors hover:brightness-110")}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <td className="px-5 py-3 font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
+                  <tr
+                    key={i}
+                    className="transition-colors"
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
+                  >
+                    <td className="px-5 py-3">
+                      {info && (
+                        <span
+                          style={{
+                            fontSize: ".65rem",
+                            fontWeight: 700,
+                            letterSpacing: ".06em",
+                            textTransform: "uppercase",
+                            padding: "2px 6px",
+                            background: `${info.color}15`,
+                            color: info.color,
+                          }}
+                        >
+                          {info.label}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap" style={{ fontWeight: 700, color: "var(--white)" }}>
                       {pos.symbol.replace("USDT", "")}
-                      <span className="ml-1 font-normal" style={{ color: "var(--text-secondary)" }}>USDT</span>
+                      <span style={{ fontWeight: 400, marginLeft: "4px", color: "var(--muted)" }}>USDT</span>
                     </td>
                     <td className="px-5 py-3">
-                      <span className="font-bold px-1.5 py-0.5 rounded"
-                        style={{ background: sideBg, color: sideColor }}>
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          letterSpacing: ".06em",
+                          padding: "2px 6px",
+                          background: sideBg,
+                          color: sideColor,
+                        }}
+                      >
                         {pos.side}
                       </span>
                     </td>
-                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--muted)" }}>
                       {pos.openDate}
                     </td>
-                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--muted)" }}>
                       {pos.closeDate}
                     </td>
-                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--muted)" }}>
                       {formatUSD(pos.entryPrice, dec)}
                     </td>
-                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
+                    <td className="px-5 py-3 font-num whitespace-nowrap" style={{ color: "var(--white)" }}>
                       {formatUSD(pos.exitPrice, dec)}
                     </td>
-                    <td className="px-5 py-3 font-semibold font-num whitespace-nowrap"
-                      style={{ color: pnlPos ? "var(--profit)" : "var(--loss)" }}>
+                    <td
+                      className="px-5 py-3 font-num whitespace-nowrap"
+                      style={{ fontWeight: 700, color: pnlPos ? "var(--profit)" : "var(--loss)" }}
+                    >
                       {formatPnl(pos.realizedPnl)}
                     </td>
                   </tr>

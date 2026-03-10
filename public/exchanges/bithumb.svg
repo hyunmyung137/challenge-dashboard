@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 130">
+  <defs>
+    <linearGradient id="bGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E8531E"/>
+      <stop offset="100%" stop-color="#F7A233"/>
+    </linearGradient>
+  </defs>
+  <!-- b icon -->
+  <path fill="url(#bGrad)" d="M0,0h60c19,0,35,16,35,35v60c0,19-16,35-35,35H0V0z"/>
+  <path fill="#fff" d="M22,25h16c12,0,20,6,20,17v0c0,7-4,12-9,14 5,2,11,7,11,16v0c0,12-8,19-21,19H22V25z M37,52c5,0,8-3,8-7v0c0-5-3-7-8-7h-2v14H37z M38,69h-3v16h3c6,0,9-3,9-8v0c0-5-3-8-9-8z"/>
+  <!-- wordmark -->
+  <text x="112" y="100" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="88" font-style="italic" fill="#848E9C">bithumb</text>
+</svg>

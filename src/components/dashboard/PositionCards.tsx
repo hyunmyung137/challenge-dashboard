@@ -1,145 +1,231 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
 import { RefreshCw } from "lucide-react";
 import { formatUSD, formatPnl, formatPct, cn } from "@/lib/utils";
+import { usePortfolioStore, type PortfolioPosition } from "@/stores/portfolio-store";
+import { usePortfolio } from "@/hooks/usePortfolio";
+import { EXCHANGE_INFO } from "@/lib/exchanges";
 
-type Position = {
-  symbol: string;
-  positionAmt: number;
-  entryPrice: number;
-  markPrice: number;
-  liquidationPrice: number;
-  unrealizedPnl: number;
-  leverage: number;
-  marginType: string;
-  isolatedMargin: number;
-  side: "LONG" | "SHORT";
-  roe: number;
-};
+export default function PositionCards({ onRefresh, loadingOverride }: { onRefresh?: () => void; loadingOverride?: boolean } = {}) {
+  const { getFilteredPositions, lastUpdated } = usePortfolioStore();
+  const portfolio = usePortfolio();
+  const isLoading = loadingOverride ?? portfolio.isLoading;
+  const refresh = onRefresh ?? portfolio.refresh;
 
-export default function PositionCards({ apiBase = "/api/binance" }: { apiBase?: string }) {
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-
-  const fetchPositions = useCallback(async () => {
-    try {
-      const res = await fetch(`${apiBase}/positions`);
-      if (!res.ok) throw new Error("API error");
-      setPositions(await res.json());
-      setLastUpdated(new Date());
-    } catch {
-      console.error("Failed to fetch positions");
-    } finally {
-      setLoading(false);
-    }
-  }, [apiBase]);
-
-  useEffect(() => {
-    fetchPositions();
-    const interval = setInterval(fetchPositions, 60 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchPositions]);
-
+  const positions = getFilteredPositions();
   const totalUnrealized = positions.reduce((s, p) => s + p.unrealizedPnl, 0);
 
+  const lastTime = lastUpdated
+    ? new Date(lastUpdated).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "";
+
   return (
-    <div className="rounded-xl" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: "var(--border)" }}>
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+      <div
+        className="flex items-center justify-between px-5 py-3.5"
+        style={{ borderBottom: "1px solid var(--border)" }}
+      >
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Open Positions</span>
-          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-            style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+          <span
+            style={{
+              fontSize: ".8rem",
+              fontWeight: 700,
+              letterSpacing: ".08em",
+              textTransform: "uppercase",
+              color: "var(--white)",
+            }}
+          >
+            Open Positions
+          </span>
+          <span
+            className="font-num"
+            style={{
+              fontSize: ".7rem",
+              fontWeight: 700,
+              padding: "2px 8px",
+              background: "var(--dim)",
+              border: "1px solid var(--border)",
+              color: "var(--muted)",
+            }}
+          >
             {positions.length}
           </span>
           {positions.length > 0 && (
-            <span className="text-sm font-semibold font-num"
-              style={{ color: totalUnrealized >= 0 ? "var(--profit)" : "var(--loss)" }}>
+            <span
+              className="font-num"
+              style={{
+                fontSize: ".85rem",
+                fontWeight: 700,
+                color: totalUnrealized >= 0 ? "var(--profit)" : "var(--loss)",
+              }}
+            >
               {formatPnl(totalUnrealized)}
             </span>
           )}
         </div>
-        <button onClick={fetchPositions}
-          className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors hover:bg-[var(--bg-elevated)]"
-          style={{ color: "var(--text-secondary)" }}>
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          {lastUpdated.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+        <button
+          onClick={refresh}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 transition-colors"
+          style={{
+            fontSize: ".7rem",
+            color: "var(--muted)",
+            background: "transparent",
+            border: "1px solid var(--border)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "var(--acid)";
+            e.currentTarget.style.color = "var(--acid)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "var(--border)";
+            e.currentTarget.style.color = "var(--muted)";
+          }}
+        >
+          <RefreshCw size={10} className={isLoading ? "animate-spin" : ""} />
+          {lastTime}
         </button>
       </div>
 
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-5">
+      {isLoading && positions.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px p-5" style={{ background: "var(--border)" }}>
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="rounded-xl p-4 animate-pulse h-40" style={{ background: "var(--bg-elevated)" }} />
+            <div key={i} className="animate-pulse" style={{ height: "160px", background: "var(--dim)" }} />
           ))}
         </div>
       ) : positions.length === 0 ? (
         <div className="flex items-center justify-center py-16">
-          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>No open positions</p>
+          <p style={{ fontSize: ".75rem", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--muted)" }}>
+            No open positions
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-5">
-          {positions.map((pos) => (
-            <PositionCard key={`${pos.symbol}-${pos.side}`} pos={pos} />
-          ))}
+          {positions
+            .sort((a, b) => Math.abs(b.unrealizedPnl) - Math.abs(a.unrealizedPnl))
+            .map((pos) => (
+              <PositionCard key={`${pos.exchange}-${pos.symbol}-${pos.side}`} pos={pos} />
+            ))}
         </div>
       )}
     </div>
   );
 }
 
-function PositionCard({ pos }: { pos: Position }) {
+function PositionCard({ pos }: { pos: PortfolioPosition }) {
   const isLong = pos.side === "LONG";
-  const sideColor = isLong ? "var(--profit)" : "var(--loss)";
-  const sideBg = isLong ? "rgba(14,203,129,0.12)" : "rgba(246,70,93,0.12)";
+  const isSpot = pos.side === "SPOT";
+  const sideColor = isSpot ? "var(--acid)" : isLong ? "var(--profit)" : "var(--loss)";
+  const sideBg = isSpot
+    ? "rgba(200,255,0,0.08)"
+    : isLong
+    ? "rgba(14,203,129,0.08)"
+    : "rgba(255,45,45,0.08)";
   const pnlPos = pos.unrealizedPnl >= 0;
-  const margin = (pos.entryPrice * Math.abs(pos.positionAmt)) / pos.leverage;
+  const margin = pos.leverage > 0 ? (pos.entryPrice * Math.abs(pos.size)) / pos.leverage : 0;
+  const exchangeInfo = EXCHANGE_INFO[pos.exchange];
 
   return (
-    <div className="rounded-xl p-4 flex flex-col gap-3 transition-all hover:brightness-110"
-      style={{ background: "var(--bg-elevated)", border: `1px solid ${isLong ? "rgba(14,203,129,0.2)" : "rgba(246,70,93,0.2)"}` }}>
+    <div
+      className="p-4 flex flex-col gap-3 transition-all"
+      style={{
+        background: "var(--dim)",
+        border: `1px solid ${isLong ? "rgba(14,203,129,0.15)" : isSpot ? "rgba(200,255,0,0.15)" : "rgba(255,45,45,0.15)"}`,
+      }}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
-            {pos.symbol.replace("USDT", "")}
-            <span className="text-xs font-normal ml-1" style={{ color: "var(--text-secondary)" }}>USDT</span>
+          {/* Exchange badge */}
+          <span
+            style={{
+              fontSize: ".65rem",
+              fontWeight: 700,
+              letterSpacing: ".06em",
+              textTransform: "uppercase",
+              padding: "2px 6px",
+              background: `${exchangeInfo?.color ?? "#888"}15`,
+              color: exchangeInfo?.color ?? "#888",
+            }}
+          >
+            {exchangeInfo?.label ?? pos.exchange}
           </span>
-          <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: sideBg, color: sideColor }}>
+          <span style={{ fontSize: ".9rem", fontWeight: 700, color: "var(--white)" }}>
+            {pos.symbol.replace(/USDT$/, "").replace(/USD$/, "")}
+            <span style={{ fontSize: ".7rem", fontWeight: 400, marginLeft: "4px", color: "var(--muted)" }}>
+              {pos.symbol.includes("KRW") ? "KRW" : "USDT"}
+            </span>
+          </span>
+          <span
+            style={{
+              fontSize: ".65rem",
+              fontWeight: 700,
+              letterSpacing: ".06em",
+              padding: "2px 6px",
+              background: sideBg,
+              color: sideColor,
+            }}
+          >
             {pos.side}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs px-1.5 py-0.5 rounded font-medium"
-            style={{ background: "rgba(240,185,11,0.12)", color: "var(--accent)" }}>
-            {pos.leverage}x
+          {pos.leverage > 1 && (
+            <span
+              className="font-num"
+              style={{
+                fontSize: ".65rem",
+                fontWeight: 700,
+                padding: "2px 6px",
+                background: "rgba(200,255,0,0.08)",
+                color: "var(--acid)",
+              }}
+            >
+              {pos.leverage}x
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: ".65rem",
+              textTransform: "capitalize",
+              color: "var(--muted)",
+            }}
+          >
+            {pos.marginType}
           </span>
-          <span className="text-xs capitalize" style={{ color: "var(--text-secondary)" }}>{pos.marginType}</span>
         </div>
       </div>
 
-      <div className="border-b pb-3" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-        <p className="text-xs mb-0.5" style={{ color: "var(--text-secondary)" }}>Unrealized PNL (USDT)</p>
+      <div className="pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
+        <p style={{ fontSize: ".65rem", letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "4px" }}>
+          Unrealized PNL (USDT)
+        </p>
         <div className="flex items-baseline gap-2">
-          <span className={cn("text-2xl font-bold font-num")} style={{ color: pnlPos ? "var(--profit)" : "var(--loss)" }}>
+          <span
+            className="font-display"
+            style={{ fontSize: "1.5rem", color: pnlPos ? "var(--profit)" : "var(--loss)" }}
+          >
             {formatPnl(pos.unrealizedPnl)}
           </span>
-          <span className="text-sm font-medium font-num" style={{ color: pnlPos ? "var(--profit)" : "var(--loss)" }}>
+          <span
+            className="font-num"
+            style={{ fontSize: ".85rem", fontWeight: 600, color: pnlPos ? "var(--profit)" : "var(--loss)" }}
+          >
             ({formatPct(pos.roe)})
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-y-2.5 gap-x-4">
-        <DetailRow label="Size" value={`${Math.abs(pos.positionAmt)}`} />
-        <DetailRow label="Margin" value={formatUSD(margin)} />
+        <DetailRow label="Size" value={`${Math.abs(pos.size)}`} />
+        {margin > 0 && <DetailRow label="Margin" value={formatUSD(margin)} />}
         <DetailRow label="Entry Price" value={formatUSD(pos.entryPrice, priceDecimals(pos.entryPrice))} />
         <DetailRow label="Mark Price" value={formatUSD(pos.markPrice, priceDecimals(pos.markPrice))} highlight />
-        <DetailRow
-          label="Liq. Price"
-          value={pos.liquidationPrice > 0 ? formatUSD(pos.liquidationPrice, priceDecimals(pos.liquidationPrice)) : "—"}
-          valueColor="var(--loss)"
-        />
+        {pos.liquidationPrice > 0 && (
+          <DetailRow
+            label="Liq. Price"
+            value={formatUSD(pos.liquidationPrice, priceDecimals(pos.liquidationPrice))}
+            valueColor="var(--loss)"
+          />
+        )}
       </div>
     </div>
   );
@@ -150,9 +236,17 @@ function DetailRow({ label, value, highlight, valueColor }: {
 }) {
   return (
     <div>
-      <p className="text-xs mb-0.5" style={{ color: "var(--text-secondary)" }}>{label}</p>
-      <p className="text-xs font-semibold font-num"
-        style={{ color: valueColor ?? (highlight ? "var(--text-primary)" : "var(--text-secondary)") }}>
+      <p style={{ fontSize: ".65rem", letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "2px" }}>
+        {label}
+      </p>
+      <p
+        className="font-num"
+        style={{
+          fontSize: ".75rem",
+          fontWeight: 600,
+          color: valueColor ?? (highlight ? "var(--white)" : "var(--muted)"),
+        }}
+      >
         {value}
       </p>
     </div>

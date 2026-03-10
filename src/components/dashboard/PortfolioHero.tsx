@@ -1,99 +1,152 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { formatUSD, formatPct } from "@/lib/utils";
+import { usePortfolioStore } from "@/stores/portfolio-store";
+import { EXCHANGE_INFO } from "@/lib/exchanges";
 
-type Balance = { totalWalletBalance: number; availableBalance: number };
-type Position = { unrealizedPnl: number };
+export default function PortfolioHero() {
+  const {
+    getFilteredBalances,
+    getTotalValue,
+    getTotalUnrealizedPnl,
+    lastUpdated,
+  } = usePortfolioStore();
 
-const REFRESH_MS = 60 * 60 * 1000;
-
-export default function PortfolioHero({ apiBase = "/api/binance" }: { apiBase?: string }) {
-  const [balance, setBalance] = useState<Balance>({ totalWalletBalance: 0, availableBalance: 0 });
-  const [unrealizedPnl, setUnrealizedPnl] = useState(0);
-  const [now, setNow] = useState("");
-
-  useEffect(() => {
-    const tick = () =>
-      setNow(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
-    tick();
-
-    async function fetchAll() {
-      try {
-        const [balRes, posRes] = await Promise.all([
-          fetch(`${apiBase}/balance`),
-          fetch(`${apiBase}/positions`),
-        ]);
-        if (balRes.ok) {
-          const b = await balRes.json();
-          setBalance({ totalWalletBalance: b.totalWalletBalance, availableBalance: b.availableBalance });
-        }
-        if (posRes.ok) {
-          const positions: Position[] = await posRes.json();
-          setUnrealizedPnl(positions.reduce((s, p) => s + p.unrealizedPnl, 0));
-        }
-        tick();
-      } catch {}
-    }
-
-    fetchAll();
-    const interval = setInterval(fetchAll, REFRESH_MS);
-    return () => clearInterval(interval);
-  }, [apiBase]);
-
-  const { totalWalletBalance, availableBalance } = balance;
-  const portfolioValue = totalWalletBalance + unrealizedPnl;
-  const marginUsed = totalWalletBalance - availableBalance;
-  const marginUsedPct = totalWalletBalance > 0 ? (marginUsed / totalWalletBalance) * 100 : 0;
+  const filteredBalances = getFilteredBalances();
+  const totalBalance = filteredBalances.reduce((s, b) => s + b.totalBalance, 0);
+  const totalAvailable = filteredBalances.reduce((s, b) => s + b.availableBalance, 0);
+  const unrealizedPnl = filteredBalances.reduce((s, b) => s + b.unrealizedPnl, 0);
+  const portfolioValue = totalBalance + unrealizedPnl;
+  const marginUsed = totalBalance - totalAvailable;
+  const marginUsedPct = totalBalance > 0 ? (marginUsed / totalBalance) * 100 : 0;
   const isPositive = unrealizedPnl >= 0;
-  const unrealizedPct = totalWalletBalance > 0 ? (unrealizedPnl / totalWalletBalance) * 100 : 0;
+  const unrealizedPct = totalBalance > 0 ? (unrealizedPnl / totalBalance) * 100 : 0;
+
+  const now = lastUpdated
+    ? new Date(lastUpdated).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : null;
 
   return (
-    <div className="rounded-xl p-6" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+    <div className="p-6" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
       <div className="flex items-start justify-between mb-2">
-        <span className="text-sm" style={{ color: "var(--text-secondary)" }}>Total Portfolio Value</span>
+        <span
+          style={{
+            fontSize: ".75rem",
+            letterSpacing: ".12em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+          }}
+        >
+          Total Portfolio Value
+        </span>
         {now && (
           <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Updated {now}</span>
-            <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
-              auto-refresh 1h
+            <span style={{ fontSize: ".7rem", color: "var(--muted)" }}>Updated {now}</span>
+            <span
+              style={{
+                fontSize: ".65rem",
+                letterSpacing: ".08em",
+                textTransform: "uppercase",
+                padding: "2px 6px",
+                background: "var(--dim)",
+                border: "1px solid var(--border)",
+                color: "var(--muted)",
+              }}
+            >
+              auto 1h
             </span>
           </div>
         )}
       </div>
 
       <div className="flex items-end gap-4 mb-6">
-        <span className="text-4xl font-bold font-num tracking-tight" style={{ color: "var(--text-primary)" }}>
+        <span className="font-display" style={{ fontSize: "2.6rem", color: "var(--white)", lineHeight: 1 }}>
           {formatUSD(portfolioValue)}
         </span>
-        <div className="flex items-center gap-1 text-sm font-medium mb-1 font-num"
-          style={{ color: isPositive ? "var(--profit)" : "var(--loss)" }}>
-          {isPositive ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+        <div
+          className="flex items-center gap-1 mb-1 font-num"
+          style={{
+            fontSize: ".9rem",
+            fontWeight: 600,
+            color: isPositive ? "var(--profit)" : "var(--loss)",
+          }}
+        >
+          {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
           <span>{unrealizedPnl >= 0 ? "+" : ""}{formatUSD(unrealizedPnl)}</span>
           <span>({formatPct(unrealizedPct)}) unrealized</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-        <StatItem label="Wallet Balance" value={formatUSD(totalWalletBalance)} sub="USDT futures" />
+      {/* Per-exchange breakdown */}
+      {filteredBalances.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {filteredBalances.map((b) => {
+            const info = EXCHANGE_INFO[b.exchange];
+            return (
+              <div
+                key={`${b.exchange}-${b.label}`}
+                className="flex items-center gap-1.5 px-2.5 py-1"
+                style={{
+                  fontSize: ".75rem",
+                  background: "var(--dim)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <div className="w-2 h-2" style={{ background: info?.color ?? "#888" }} />
+                <span style={{ color: "var(--muted)" }}>{info?.label ?? b.exchange}</span>
+                <span className="font-num font-bold" style={{ color: "var(--white)" }}>
+                  {formatUSD(b.totalBalance + b.unrealizedPnl)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div
+        className="grid grid-cols-4 gap-4 pt-4"
+        style={{ borderTop: "1px solid var(--border)" }}
+      >
+        <StatItem label="Wallet Balance" value={formatUSD(totalBalance)} sub="all exchanges" />
         <StatItem
           label="Unrealized PNL"
           value={(unrealizedPnl >= 0 ? "+" : "") + formatUSD(unrealizedPnl)}
           valueColor={unrealizedPnl >= 0 ? "var(--profit)" : "var(--loss)"}
           sub="open positions"
         />
-        <StatItem label="Available Balance" value={formatUSD(availableBalance)} sub="to trade" />
+        <StatItem label="Available Balance" value={formatUSD(totalAvailable)} sub="to trade" />
         <div>
-          <p className="text-xs mb-1" style={{ color: "var(--text-secondary)" }}>Margin Used</p>
-          <p className="text-sm font-semibold font-num" style={{ color: "var(--text-primary)" }}>
+          <p
+            style={{
+              fontSize: ".7rem",
+              letterSpacing: ".1em",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              marginBottom: "4px",
+            }}
+          >
+            Margin Used
+          </p>
+          <p className="font-num" style={{ fontSize: ".95rem", fontWeight: 700, color: "var(--white)" }}>
             {marginUsedPct.toFixed(1)}%
           </p>
-          <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-elevated)" }}>
-            <div className="h-full rounded-full transition-all" style={{
-              width: `${Math.min(marginUsedPct, 100)}%`,
-              background: marginUsedPct > 70 ? "var(--loss)" : marginUsedPct > 40 ? "var(--accent)" : "var(--profit)",
-            }} />
+          <div
+            className="mt-1.5 overflow-hidden"
+            style={{ height: "3px", background: "var(--dim)" }}
+          >
+            <div
+              className="h-full transition-all"
+              style={{
+                width: `${Math.min(marginUsedPct, 100)}%`,
+                background:
+                  marginUsedPct > 70
+                    ? "var(--loss)"
+                    : marginUsedPct > 40
+                    ? "var(--acid)"
+                    : "var(--profit)",
+              }}
+            />
           </div>
         </div>
       </div>
@@ -101,12 +154,36 @@ export default function PortfolioHero({ apiBase = "/api/binance" }: { apiBase?: 
   );
 }
 
-function StatItem({ label, value, sub, valueColor }: { label: string; value: string; sub?: string; valueColor?: string }) {
+function StatItem({
+  label,
+  value,
+  sub,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  valueColor?: string;
+}) {
   return (
     <div>
-      <p className="text-xs mb-1" style={{ color: "var(--text-secondary)" }}>{label}</p>
-      <p className="text-sm font-semibold font-num" style={{ color: valueColor ?? "var(--text-primary)" }}>{value}</p>
-      {sub && <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>{sub}</p>}
+      <p
+        style={{
+          fontSize: ".7rem",
+          letterSpacing: ".1em",
+          textTransform: "uppercase",
+          color: "var(--muted)",
+          marginBottom: "4px",
+        }}
+      >
+        {label}
+      </p>
+      <p className="font-num" style={{ fontSize: ".95rem", fontWeight: 700, color: valueColor ?? "var(--white)" }}>
+        {value}
+      </p>
+      {sub && (
+        <p style={{ fontSize: ".65rem", color: "var(--muted)", marginTop: "2px" }}>{sub}</p>
+      )}
     </div>
   );
 }
